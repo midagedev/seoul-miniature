@@ -1570,8 +1570,10 @@ export function createPeople(scene, grid, opts = {}) {
   const sideAng = () => Math.atan2(ex[1], ex[0]) + rr(-0.35, 0.35) + (rnd() < 0.5 ? Math.PI : 0);
   const block = (n) => Array.from({ length: n }, (_, k) => (k === 0 ? [0, 0] : [((k - 1) % 2) * 1.2 - 0.6, -1.2 - Math.floor((k - 1) / 2) * 1.15]));
   const ceremony = city ? null : mkCeremony();
-  if (city) placeCity();
-  else {
+  if (city) {
+    placeCity();
+    if (opts.birds?.flocks?.length) { let n = 0; for (const f of opts.birds.flocks) { if (n >= 2) break; if (mkPigeon(f)) n++; } }
+  } else {
   if (opts.birds) { let n = 0; for (const f of opts.birds.flocks) { if (n >= 5) break; if (mkPigeon(f)) n++; } }
   for (const [c, r0, r1, n] of [[A.gate, 14, 55, 3], [A.geun, 14, 50, 2], [A.gyeong, 18, 60, 2], [A.hyang, 8, 50, 2]]) for (let k = 0; k < n; k++) mkPhoto(c, r0, r1, k === 0);
   for (let k = 0; k < 3; k++) mkPhoto(null, 0, 0, false);

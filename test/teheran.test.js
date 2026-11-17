@@ -4,13 +4,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MAPS, isPublic, mapIdFrom, resolveShots } from '../src/maps.js';
+import { MAPS, isPublic, mapIdFrom, resolveShots, resolveView } from '../src/maps.js';
 import { sceneFromMap } from '../src/mapscene.js';
 import { makeProjection } from '../src/geom.js';
 import { decodePng } from '../src/png.js';
 import { makeTour } from '../src/tour.js';
 import { createSimpleTraffic } from '../src/sim/simple-traffic.js';
 import { createPeople, addCast } from '../src/sim/people.js';
+import { createBirds, isGround } from '../src/birds.js';
 
 const M = MAPS.teheran;
 const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../assets', M.dir);
@@ -102,4 +103,25 @@ test('테헤란로 교통·사람: 차가 차로를 달리고, 사람 장면이 
   const p = createPeople(scene, { w, h, cls }, { seed: 5, proj, heightAt, profile: 'city' });
   for (let i = 0; i < 60; i++) p.step(1 / 30, { tod: 12.5, season: 1, rain: 0, view: [0, 0, 2, 2] });
   assert.ok(p.counts().people > 300, `사람 ${JSON.stringify(p.counts())}`);
+});
+
+test('테헤란로 비둘기: 삼성역 밀레니엄 광장에만 앉고(주차장 무작위 무리 없음), 날아올랐다 제자리로 돌아오며, 아이가 달려가 날리는 장면이 있다', { skip }, async () => {
+  const { scene, cls, w, h, proj, heightAt } = await load();
+  const spots = M.birdSpots.map((v) => resolveView(v, scene.anchors, [w, h]).slice(0, 2));
+  const birds = createBirds({ w, h, cls }, { seed: 11, scale: proj.ps, spots, flocks: M.birdFlocks });
+  assert.equal(birds.flocks.length, M.birdSpots.length);
+  const [mx, my] = scene.anchors.millennium;
+  for (const f of birds.flocks) {
+    assert.ok(Math.hypot(f.x - mx, f.y - my) < 40, `무리 (${f.x}, ${f.y}) 가 광장 밖`);
+    for (const b of f.birds) for (const dx of [-0.5, 0, 0.5]) assert.ok(isGround(cls[Math.floor(b.hy) * w + Math.floor(b.hx + dx)]), `(${b.hx}, ${b.hy})`);
+  }
+  // 날아오르는 고리는 미터로 경복궁과 같다(1.25 m/px 지도에서 지도 px 로 0.4배)
+  const f = birds.flocks[0];
+  assert.equal(birds.scare(f.x, f.y, 3), 1);
+  assert.ok(f.path.rx * 1.25 < 0.5 * 75 + 1, `고리 반경 ${f.path.rx} px`);
+  for (let i = 0; i < 30 * 20; i++) birds.step(1 / 30);
+  assert.equal(f.state, 'ground');
+  addCast(scene);
+  const p = createPeople(scene, { w, h, cls }, { seed: 5, proj, heightAt, profile: 'city', birds });
+  assert.ok(p.find('pigeon').length >= 1, '비둘기 장면 없음');
 });

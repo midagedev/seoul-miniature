@@ -90,10 +90,11 @@ export function* hiSpritesSteps(scene, proj, SS) {
   const birdJobs = [];
   for (const type of ['pigeon', 'egret', 'magpie']) {
     const bw = type === 'pigeon' ? 3 : 4;
-    birds[type] = [0, 1, 2].map((f) => { const [ox, oy] = place(bw * k, 2 * k); birdJobs.push({ type, f, ox, oy, bw }); return { src: [ox, oy], w: bw / 2, h: 1, bw }; });
+    birds[type] = [0, 1, 2].map((f) => { const [ox, oy] = place(bw * k, 2 * k); birdJobs.push({ type, f, ox, oy, bw }); return { src: [ox, oy], w: bw * k / SS, h: 2 * k / SS, bw }; });
   }
   birds.sit = [];
-  for (const face of [-1, 1]) for (const peck of [0, 1]) { const [ox, oy] = place(2 * k, 2 * k); birdJobs.push({ type: 'sit', face, peck, ox, oy }); birds.sit.push({ src: [ox, oy], w: 1, h: 1, face, peck }); }
+  for (const face of [-1, 1]) for (const peck of [0, 1]) { const [ox, oy] = place(2 * k, 2 * k); birdJobs.push({ type: 'sit', face, peck, ox, oy }); birds.sit.push({ src: [ox, oy], w: 2 * k / SS, h: 2 * k / SS, face, peck }); }
+  birds.unit = 2 * k / SS;   // z2 px 두 칸 = 지도 px(0.5 m/px 지도에서 1). birds.js 가 자리·그림자 크기에 곱한다
 
   const H = shelf.y + shelf.h;
   const img = new ImageData(ATW, H);

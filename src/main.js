@@ -144,7 +144,8 @@ async function boot() {
       R.setWinFaces(winEst.faceBytes()); R.setWinTab(winEst.tab, ...winEst.tabSize); winSource = 'live';
     } catch (e) { console.warn('창 격자 면을 만들지 못해 기본 격자를 씁니다:', e); winEst = null; }
     // 새·사람 행동은 지도 설정으로 켠다(경복궁 전용 장면 좌표에 기대는 것들). 끈 지도는 빈 새 떼, 걷는 사람만.
-    const b = MAP.birds ? createBirds({ w: W, h: H, cls }, { seed: Number(params.get('birdseed') || 11), depthAt })
+    const b = MAP.birds ? createBirds({ w: W, h: H, cls }, { seed: Number(params.get('birdseed') || 11), depthAt, scale: proj.ps,
+      spots: (MAP.birdSpots || []).map((v) => view(v).slice(0, 2)), ...(MAP.birdFlocks !== undefined ? { flocks: MAP.birdFlocks } : {}) })
       : { birds: [], step() {}, scare() {}, launch() {}, off: true };
     const heightAt = (x, y) => (groundAt(y + 0.5) - depthAt(x, y)) * -proj.vd[2];
     if (MAP.people) try {
@@ -153,7 +154,8 @@ async function boot() {
     // 세워 둔 차(도시 지도): 걷는 길·자전거 길 위에는 두지 않는다
     if (MAP.parking) try {
       const avoid = people ? [...new Set(people.walkers.map((w) => w.pts)), ...(people.bikeChains || []).map((c) => c.pts)] : scene.walkers.map((w) => w.pts);
-      parked = createParking(scene, { w: W, h: H, cls }, { proj, heightAt, avoid, seed: Number(params.get('seed') || 7), max: Number(params.get('parked') ?? MAP.parking) });
+      parked = createParking(scene, { w: W, h: H, cls }, { proj, heightAt, avoid, seed: Number(params.get('seed') || 7), max: Number(params.get('parked') ?? MAP.parking),
+        keepOutPx: (MAP.parkKeepOut || []).map((k) => [...view(k).slice(0, 2), k.r]) });
     } catch (e) { console.warn('세워 둔 차를 만들지 못했습니다:', e); }
     dp = null;   // depthAt 클로저가 18 MB 픽셀 배열을 붙잡지 않게
     return b;

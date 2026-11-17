@@ -17,7 +17,9 @@ export function nextRand(o) {
 }
 
 // grid = { w, h, cls: Uint8Array(w*h) } (지도 px, 0.5 m)
-export function planBirds(grid, { seed = 11, flocks = 12, loners = 3, minGap = 110 } = {}) {
+// spots = 무리를 꼭 앉힐 자리(지도 px [x, y]). 넓은 마당이 드문 도시 지도용: 자리 둘레 24 px 안에서 가장 가까운 앉을 땅을 고른다(무작위 무리보다 먼저).
+// scale = 지도 px 당 미터 보정(proj.ps: 0.5 m/px 지도 1). 무리가 퍼지는 폭을 미터로 같게 맞춘다.
+export function planBirds(grid, { seed = 11, flocks = 12, loners = 3, minGap = 110, spots = [], scale = 1 } = {}) {
   const { w, h, cls } = grid;
   const R = { rs: seed | 0 }, rnd = () => nextRand(R);
   const at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h ? 0 : cls[y * w + x]);
@@ -31,13 +33,12 @@ export function planBirds(grid, { seed = 11, flocks = 12, loners = 3, minGap = 1
 
   // ── 비둘기 무리: 넓은 마당·광장 한가운데(가장자리·도로 옆 피함)
   const out = { flocks: [], loners: [] };
-  for (let t = 0; t < 8000 && out.flocks.length < flocks; t++) {
-    const x = Math.floor(rnd() * w), y = Math.floor(rnd() * h);
-    if (!isGround(at(x, y)) || !allIn(x, y, 4, isGround) || frac(x, y, 12, isGround) < 0.85 || !far(out.flocks, x, y, minGap)) continue;
+  const sp = Math.max(0.35, scale);   // 무리 폭 배율(1.25 m/px 지도에서 너무 촘촘해 반 px 격자에서 겹치지 않게 하한)
+  const addFlock = (x, y) => {
     const n = 5 + Math.floor(rnd() * 8);
     const birds = [];
     for (let b = 0, tries = 0; b < n && tries < 200; tries++) {
-      const ang = rnd() * TAU, rad = 1.5 + rnd() * 8;
+      const ang = rnd() * TAU, rad = (1.5 + rnd() * 8) * sp;
       const hx = Math.round((x + Math.cos(ang) * rad) * 2) / 2, hy = Math.round((y + Math.sin(ang) * rad * 0.6) * 2) / 2;
       // 앉는 자리 주변 5×5 가 모두 땅이어야 한다(제자리 종종걸음 ±1 그림 px 도 땅 위)
       if (!allIn(Math.floor(hx), Math.floor(hy), 2, isGround)) continue;
@@ -46,7 +47,22 @@ export function planBirds(grid, { seed = 11, flocks = 12, loners = 3, minGap = 1
       birds.push({ hx, hy, face: rnd() < 0.5 ? -1 : 1, vis: rnd(), lag: rnd() * 0.6, ox: Math.cos(fa) * fr, oy: Math.sin(fa) * fr, bob: rnd() * TAU, flap: rnd(), id: out.flocks.length * 64 + b });
       b++;
     }
-    if (birds.length >= 3) out.flocks.push({ x, y, r: 10, birds });
+    if (birds.length >= 3) { out.flocks.push({ x, y, r: 10 * sp, birds }); return true; }
+    return false;
+  };
+  for (const [sx, sy] of spots) {
+    let best = null, bd = Infinity;
+    for (let dy = -24; dy <= 24; dy++) for (let dx = -24; dx <= 24; dx++) {
+      const x = Math.round(sx) + dx, y = Math.round(sy) + dy, d = dx * dx + dy * dy;
+      if (d >= bd || !isGround(at(x, y)) || !allIn(x, y, 2, isGround) || frac(x, y, 6, isGround) < 0.75 || !far(out.flocks, x, y, 12)) continue;
+      best = [x, y]; bd = d;
+    }
+    if (best) addFlock(best[0], best[1]);
+  }
+  for (let t = 0; t < 8000 && out.flocks.length < spots.length + flocks; t++) {
+    const x = Math.floor(rnd() * w), y = Math.floor(rnd() * h);
+    if (!isGround(at(x, y)) || !allIn(x, y, 4, isGround) || frac(x, y, 12, isGround) < 0.85 || !far(out.flocks, x, y, minGap)) continue;
+    addFlock(x, y);
   }
 
   // ── 외톨이 새: 백로는 물 위(물가 숲 근처), 까치는 숲 위를 천천히 돈다
@@ -59,7 +75,7 @@ export function planBirds(grid, { seed = 11, flocks = 12, loners = 3, minGap = 1
         ? at(x, y) === CLS.WATER && frac(x, y, 16, (c) => c === CLS.WATER) > 0.3 && frac(x, y, 40, (c) => c === CLS.TREE) > 0.05
         : at(x, y) === CLS.TREE && frac(x, y, 20, (c) => c === CLS.TREE) > 0.45;
       if (!ok || !far(out.loners, x, y, 300)) continue;
-      out.loners.push({ type, cx: x, cy: y, rx: 26 + rnd() * 26, alt: 7 + rnd() * 7, w: (TAU / (28 + rnd() * 16)) * (rnd() < 0.5 ? -1 : 1), ph: rnd() * TAU, flap: rnd(), vis: rnd() * 0.5 });
+      out.loners.push({ type, cx: x, cy: y, rx: (26 + rnd() * 26) * scale, alt: 7 + rnd() * 7, w: (TAU / (28 + rnd() * 16)) * (rnd() < 0.5 ? -1 : 1), ph: rnd() * TAU, flap: rnd(), vis: rnd() * 0.5 });
       break;
     }
   }
@@ -79,12 +95,13 @@ export function createBirds(grid, opts = {}) {
   });
   const loners = plan.loners.map((l) => ({ ...l, d: depthAt(l.cx, l.cy) }));
   const MAX_LAG = 0.6;
+  const K = opts.scale ?? 1;   // 날아오르는 고리 반경(지도 px)을 미터로 같게
 
   function launch(f) {
     if (f.state !== 'ground') return false;
     const r = () => nextRand(f);
     f.state = 'flying'; f.u = 0; f.T = 8 + r() * 6;
-    f.path = { rx: 30 + r() * 45, dir: r() < 0.5 ? -1 : 1, a0: r() * TAU, alt: 12 + r() * 12, wob: r() * TAU };
+    f.path = { rx: (30 + r() * 45) * K, dir: r() < 0.5 ? -1 : 1, a0: r() * TAU, alt: 12 + r() * 12, wob: r() * TAU };
     return true;
   }
   function land(f) {
@@ -118,7 +135,7 @@ export function createBirds(grid, opts = {}) {
         // 제자리 종종걸음·쪼기: 시간 칸(2.3초)마다 해시로 고른다 → 상태 없이 결정론적
         const k = Math.floor((sys.time + b.flap * 13) / 2.3);
         const hh = hash01(b.id * 977 + k);
-        out.x = b.hx + (hh < 0.15 ? -0.5 : hh < 0.3 ? 0.5 : 0); out.y = b.hy; out.alt = 0; out.flying = false;
+        out.x = b.hx + (hh < 0.15 ? -0.5 : hh < 0.3 ? 0.5 : 0) * Math.max(0.5, K); out.y = b.hy; out.alt = 0; out.flying = false;
         out.frame = hash01(b.id * 31 + k * 7 + 3) < 0.3 ? 3 : 0;
         return out;
       }
@@ -127,11 +144,11 @@ export function createBirds(grid, opts = {}) {
       const blend = sm(0, 1.3, ub) * (1 - sm(T - 1.8, T, ub));
       const ang = p.a0 + p.dir * (TAU * 1.15 / T) * ub;
       // 지면 원은 35° 시점에서 세로로 눌린다(0.57). 흔들림 항으로 고르지 않은 고리.
-      const tx = f.x + p.rx * (Math.cos(ang) - Math.cos(p.a0)) + 6 * Math.sin(ub * 0.9 + p.wob);
+      const tx = f.x + p.rx * (Math.cos(ang) - Math.cos(p.a0)) + 6 * K * Math.sin(ub * 0.9 + p.wob);
       const ty = f.y + p.rx * 0.57 * (Math.sin(ang) - Math.sin(p.a0));
       const sp = 0.7 + 0.3 * Math.sin(ub * 1.3 + b.bob);
-      out.x = b.hx + (tx + b.ox * sp - b.hx) * blend;
-      out.y = b.hy + (ty + b.oy * 0.6 * sp - b.hy) * blend;
+      out.x = b.hx + (tx + b.ox * K * sp - b.hx) * blend;
+      out.y = b.hy + (ty + b.oy * 0.6 * K * sp - b.hy) * blend;
       out.alt = (p.alt + 0.6 * Math.sin(ub * 2.1 + b.bob)) * blend;
       out.flying = blend > 0;
       const flapping = ub < 2.5 || ub > T - 2.5 || Math.sin(ub * 0.9 + b.bob) > -0.2;
@@ -187,9 +204,9 @@ export function emitBirds(R, sys, o) {
     const sy = P.y - P.alt * o.kH;
     if (o.F === 1) { dot(P.x, sy, dep, col); return; }
     if (hi) {
-      const f = hi.birds[type][P.frame];
-      R.sprite(snap(P.x) - Math.floor(f.bw / 2) * S, snap(sy) - 2 * S, f.w, f.h, f.src[0], f.src[1], dep - 0.3, 9);
-      R.shadow(sn(P.x) + 0.05, sn(P.y) + 0.1, 0.4, 0.25, 0, 0, dep, 3);
+      const f = hi.birds[type][P.frame], g = hi.birds.unit ?? 1, h = S * g;   // h = z2 px 한 칸(지도 px)
+      R.sprite(sn(P.x) - Math.floor(f.bw / 2) * h, sn(sy) - 2 * h, f.w, f.h, f.src[0], f.src[1], dep - 0.3, 9);
+      R.shadow(sn(P.x) + 0.05 * g, sn(P.y) + 0.1 * g, 0.4 * g, 0.25 * g, 0, 0, dep, 3);
       return;
     }
     const wd = shape[0].length, bx = snap(P.x) - Math.floor(wd / 2) * S, by = snap(sy) - shape.length * S;
@@ -204,9 +221,9 @@ export function emitBirds(R, sys, o) {
     const x = snap(P.x), y = snap(P.y);
     if (o.F === 1) { dot(x, y, b.d, C.D); continue; }
     if (hi) {
-      const f = hi.birds.sit[(b.face > 0 ? 2 : 0) + (P.frame === 3 ? 1 : 0)];
-      R.sprite(x - 0.25, y - 1, f.w, f.h, f.src[0], f.src[1], b.d - 0.3, 9);
-      R.shadow(sn(P.x) - 0.1, sn(P.y), 0.5, 0.25, 0, 0, b.d, 3);
+      const f = hi.birds.sit[(b.face > 0 ? 2 : 0) + (P.frame === 3 ? 1 : 0)], g = hi.birds.unit ?? 1;
+      R.sprite(sn(P.x) - 0.25 * g, sn(P.y) - g, f.w, f.h, f.src[0], f.src[1], b.d - 0.3, 9);
+      R.shadow(sn(P.x) - 0.1 * g, sn(P.y), 0.5 * g, 0.25 * g, 0, 0, b.d, 3);
       continue;
     }
     px(x, y - S, b.d, C.B);

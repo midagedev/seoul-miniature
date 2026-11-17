@@ -7,11 +7,13 @@
 // 결과: [{ kind, color, len, wid, x, y, z, th, px, py, pz, pth, parked: true }] — movers.emitVehicles 가 그대로 그린다(불 없이).
 import { hash01 } from '../geom.js';
 
-export function createParking(scene, grid, { proj, heightAt = () => 0, seed = 3, max = 900, avoid = [], keepOut = [] } = {}) {
+// keepOut = 비울 둘레 [[x, y, r]](로컬 m), keepOutPx = 같은 것을 지도 px 자리로 [[px, py, r(m)]]
+export function createParking(scene, grid, { proj, heightAt = () => 0, seed = 3, max = 900, avoid = [], keepOut = [], keepOutPx = [] } = {}) {
   const { w, h, cls } = grid, m = proj.m, ex = proj.ex, ey = proj.ey;
   const det = ex[0] * ey[1] - ex[1] * ey[0];
   const S = [0, 0, 0];
   const toWorld = (px, py) => { const a = (px - proj.W / 2) * m + proj.cx, b = (proj.H / 2 - py) * m + proj.cy; return [(a * ey[1] - b * ex[1]) / det, (b * ex[0] - a * ey[0]) / det]; };
+  keepOut = [...keepOut, ...keepOutPx.map(([px, py, r]) => [...toWorld(px, py), r])];
   const pix = (x, y) => { proj.project(x, y, 0, S); const px = Math.floor(S[0]), py = Math.floor(S[1]); return px < 0 || py < 0 || px >= w || py >= h ? -1 : py * w + px; };
   const clsAt = (x, y) => { const o = pix(x, y); return o < 0 ? 0 : cls[o]; };
   const flatAt = (x, y) => { proj.project(x, y, 0, S); const px = Math.floor(S[0]), py = Math.floor(S[1]); return px >= 0 && py >= 0 && px < w && py < h && Math.abs(heightAt(px, py)) < 0.5; };

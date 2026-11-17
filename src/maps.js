@@ -88,8 +88,11 @@ export const MAPS = {
     firstView: { wide: [0.5, 0.5, 0.9], box: { at: ['station_선릉', 'seolleung'], w: 850, h: 680 } },
     busDemo: null,
     windows: 'grid',
-    people: true, profile: 'city', birds: false, finds: false, traffic: 'simple', cars: 2500,
+    people: true, profile: 'city', birds: true, finds: false, traffic: 'simple', cars: 2500,
+    // 비둘기: 넓은 마당이 드물어(나머지는 주차장) 삼성역 밀레니엄 광장에만 앉힌다. 무작위 무리 0, 백로(탄천)·까치는 그대로.
+    birdSpots: [{ at: 'millennium', off: [-22, 12] }, { at: 'millennium', off: [5, 14] }, { at: 'millennium', off: [-2, -13] }], birdFlocks: 0,
     parking: 600,
+    parkKeepOut: [{ at: 'millennium', r: 70 }],   // 세워 둔 차를 두지 않는 둘레(m): 삼성역 광장은 보행 광장이다(OSM 상업지 폴리곤이라 포장 칸으로 읽힌다)
   },
 };
 export const DEFAULT_MAP = 'gyeongbok';

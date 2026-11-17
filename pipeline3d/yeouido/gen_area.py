@@ -305,7 +305,8 @@ from shapely.geometry import LineString, box, MultiPolygon
 from shapely.ops import unary_union, substring
 from shapely.strtree import STRtree
 from PIL import ImageColor
-sys.path.insert(0, HERE); from cam import Cam, PX as PX0
+AREA = os.environ.get('P3D_AREA', HERE)   # 다른 지역: 그 지역의 cam.py·lm_build.py 가 있는 폴더(예: ../teheran). 장면 자료는 P3D_SCENE(기본 AREA/scene.json)
+sys.path.insert(0, AREA); from cam import Cam, PX as PX0
 T0 = time.time()
 SAVE_BLEND, NO_RENDER = None, False
 if '--save-blend' in sys.argv: _i = sys.argv.index('--save-blend'); SAVE_BLEND = sys.argv[_i + 1]; del sys.argv[_i:_i + 2]
@@ -315,7 +316,7 @@ CAM = Cam(BOARD); EX, EY, VD = CAM.EX, CAM.EY, CAM.VD
 PXR = float(os.environ.get('P3D_PXR', PX0)); WW, WH = int(os.environ.get('P3D_W', 1408)), int(os.environ.get('P3D_H', 1024))
 SC = PXR / PX0; WX1, WY1 = X0 + WW * SC, Y0 + WH * SC
 GTEX = float(os.environ.get('P3D_GTEX', PXR * 0.8)); FINE = GTEX <= 0.15
-S = json.load(open(HERE + '/scene.json'))
+S = json.load(open(os.environ.get('P3D_SCENE', AREA + '/scene.json')))
 META = {1: 'ground'}
 bpy.ops.wm.read_factory_settings(use_empty=True)
 
@@ -377,6 +378,14 @@ def areas(k):
 PARKN = ('여의도공원', '여의도한강공원', '여의도샛강생태공원')
 for k, v in (('resi_land', 1), ('comm_land', 2), ('rail_land', 12), ('dirt', 11), ('grass', 3), ('wood', 28), ('wetland', 23)):
     for g, a in areas(k): fillg(g, 24 if (k == 'grass' and a['name'] in PARKN) else v)
+GKM = None   # [테헤란로] 지면 종류 래스터(S['ground_raster'], teheran/ground_kinds.py): OSM 에 없는 땅(바탕 지면 0·1·2)의 종류. 뒤에 그리는 물·광장·주차장·도로가 덮는다
+if S.get('ground_raster'):
+    _gr = S['ground_raster']; _ki = Image.open(os.path.join(os.path.dirname(os.environ.get('P3D_SCENE', AREA + '/scene.json')), _gr['png'])); _g = _gr['g']
+    _pad = 160; _ka = np.pad(np.asarray(_ki), _pad)   # 판 가장자리 타일의 지면 그림은 래스터 밖까지 나간다 → 모름(0)으로 둘러 둔다
+    _box = tuple(v + _pad for v in ((gx0 - _gr['x0']) / _g, (_gr['y1'] - gy1) / _g, (gx1 - _gr['x0']) / _g, (_gr['y1'] - gy0) / _g)); _cl = np.array(CLS); _base = _cl <= 2; GKM = np.zeros(_cl.shape, np.uint8); _best = np.full(_cl.shape, 127, np.uint8)
+    for _k, _v in sorted(_gr['map'].items()):   # 종류마다 부드럽게 키워(2 m 칸의 계단을 없앤다) 가장 센 종류를 고른다
+        _m = np.asarray(Image.fromarray(((_ka == int(_k)) * 255).astype(np.uint8)).resize((GWp, GHp), Image.BILINEAR, box=_box)); _t = (_m > _best) & _base; GKM[_t] = int(_k); _cl[_t] = _v; _best[_t] = _m[_t]
+    CLS = Image.fromarray(_cl); CD = ImageDraw.Draw(CLS)
 WATER = unary_union([P(w['rings']) for w in S['water']]).buffer(0); WATERc = WATER.intersection(GBOX.buffer(5))
 fillg(WATERc, 5)
 for g, _ in areas('pond'): fillg(g, 6)
@@ -893,6 +902,7 @@ def smooth_obj(o, deg=30.0):
     me.shade_smooth(); me.set_sharp_from_angle(angle=math.radians(deg)); me.update()
 # [랜드마크 개선] 사진 대조판 빌더(lm_build.py)가 위의 b63·assembly·hyundai·church 등을 덮어쓴다
 exec(compile(open(HERE + '/lm_build.py', encoding='utf-8').read(), HERE + '/lm_build.py', 'exec'))
+if AREA != HERE: exec(compile(open(AREA + '/lm_build.py', encoding='utf-8').read(), AREA + '/lm_build.py', 'exec'))   # 지역 빌더가 위 공용 빌더·표(LMC, LMB, LMN …)를 고쳐 쓴다
 # ---------- 건물 ----------
 LMP = {k: unary_union([P(r) for r in v['rings']]).buffer(1.5) for k, v in S['landmarks'].items()}
 OFFK = ('office', 'commercial', 'retail', 'hotel', 'public', 'government', 'yes', 'part', 'mixed_use', 'bank')
@@ -1098,6 +1108,7 @@ for g in parts(LAND):
     for t in shapely.constrained_delaunay_triangles(g).geoms:
         q = list(orient(t, 1.0).exterior.coords)[:-1]; mb.face([(x, y, 0.0) for x, y in q], gmat, [uvw(x, y) for x, y in q])
 STEPP = STEPZ.buffer(1.0); shapely.prepare(STEPP); nsk = 0
+NOSK = globals().get('NOSKIRT')   # 지역 빌더가 둘레를 직접 세우는 구덩이(광장의 내리막 계단 등): 이 안의 물가 변에는 비탈을 두르지 않는다
 for g in parts(WATERc):
     g = orient(g, 1.0)
     for ring in [g.exterior] + list(g.interiors):
@@ -1119,6 +1130,7 @@ for g in parts(WATERc):
             if abs(a_[1] - b_[1]) < 1e-6 and (abs(a_[1] - GBOX.bounds[1]) < 6 or abs(a_[1] - GBOX.bounds[3]) < 6): continue
             nx_, ny_ = en[i]; na_, nb_ = vn[i], vn[(i + 1) % n_]
             mid = Point((a_[0] + b_[0]) / 2 + nx_ * 2, (a_[1] + b_[1]) / 2 + ny_ * 2)
+            if NOSK is not None and NOSK.contains(mid): continue
             if STEPP.contains(mid):  # 계단식 호안: 디딤 1.375 m × 챌면 0.45 m 네 단
                 prof = [(0.0, 0.0)]
                 for k in range(4): prof += [((k + 1) * REV / 4, k * WL / 4), ((k + 1) * REV / 4, (k + 1) * WL / 4)]
@@ -1140,7 +1152,7 @@ BC = CAM.unproj(CAM.W / 2, CAM.H / 2, 0); CREF = np.array(BC) - VD * 3000.0
 bcx, bcy = CAM.SX0 + CAM.W * PX0 / 2, CAM.SY1 - CAM.H * PX0 / 2
 wcx, wcy = CAM.SX0 + (X0 + WX1) / 2 * PX0, CAM.SY1 - (Y0 + WY1) / 2 * PX0
 dz = [(np.array(CAM.unproj(X, Y, zz)) - CREF) @ VD for X in (0, CAM.W) for Y in (0, CAM.H) for zz in (0, 360)]
-DZ0, DZS = math.floor(min(dz) - 20), 0.05
+DZ0, DZS = math.floor(min(dz) - 20), float(os.environ.get('P3D_DZS', 0.05))   # 화면 세로가 약 2100 m 를 넘는 판은 깊이 단위를 키운다(16비트 한도)
 assert (max(dz) - DZ0) / DZS < 65000, 'depth range'
 cd = bpy.data.cameras.new('cam'); cd.type = 'ORTHO'; cd.ortho_scale = max(WW, WH) * PXR; cd.clip_start = 1; cd.clip_end = 9000
 co = bpy.data.objects.new('cam', cd); sc.collection.objects.link(co); sc.camera = co
